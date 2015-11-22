@@ -16,12 +16,10 @@ solve xs = if length xs == 9*9 then Just xs
 
 movesToConsider :: [Cell] -> [Cell]
 movesToConsider xs = filter moveIsOk (allMovesForCell row col)
-    where
-        (row, col) = findFirstEmptyCell xs
-        moveIsOk x = not (any (cellsCollide x) xs)
+    where (row, col) = findFirstEmptyCell xs
+          moveIsOk x = not (any (cellsCollide x) xs)
 
 findFirstEmptyCell :: [Cell] -> (Int,Int)
-findFirstEmptyCell [] = (0,0)
 findFirstEmptyCell xs = case (find (not . samePos) (zip allCells (sortedCells xs))) of
         Just (a,b) -> a
         _ -> allCells !! (length xs)
