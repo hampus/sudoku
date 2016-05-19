@@ -4,6 +4,7 @@
 #include <array>
 #include <bitset>
 #include <vector>
+#include <chrono>
 
 int GetBitIndex(const std::bitset<9> bits) {
     for (int i = 0; i < 9; ++i) {
@@ -205,6 +206,13 @@ void Solve(const Sudoku& sudoku) {
 }
 
 int main() {
-    Solve(ParseStdin());
+    auto s{ ParseStdin() };
+    auto start{ std::chrono::high_resolution_clock::now() };
+    Solve(std::move(s));
+    auto end{ std::chrono::high_resolution_clock::now() };
+    std::chrono::nanoseconds nanosecs{ end - start };
+    std::cout << "milliseconds: " << nanosecs.count() / 1000000.0 << "\n";
+    double persec = 1000000000.0 / nanosecs.count();
+    std::cout << "per second: " << persec << "\n";
     return 0;
 }
