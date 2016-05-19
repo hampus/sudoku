@@ -6,7 +6,7 @@
 #include <vector>
 #include <chrono>
 
-int GetBitIndex(const std::bitset<9> bits) {
+int GetBitIndex(const std::bitset<9>& bits) {
     for (int i = 0; i < 9; ++i) {
         if (bits.test(i)) return i;
     }
@@ -17,8 +17,9 @@ class Sudoku {
 public:
     Sudoku() : known_values_(0) {
         for (int i = 0; i < 81; ++i) {
-            values_.at(i) = 0;
-            potential_.at(i).set();
+            values_[i] = 0;
+            potential_[i].set();
+            counts_[i] = 9;
         }
     }
 
@@ -26,22 +27,25 @@ public:
 
     Sudoku(Sudoku&& other) = default;
 
+    constexpr Sudoku& operator=(const Sudoku& rhs) = default;
+
     void SetValue(int index, int value) {
-        int x = index % 9;
-        int y = index / 9;
+        const int x = index % 9;
+        const int y = index / 9;
         SetValue(x, y, value);
     }
 
     void SetValue(int x, int y, int value) {
         if (value > 0 && !HasFailed()) {
             const int index = 9*y + x;
-            if (values_.at(index) == 0) {
+            if (values_[index] == 0) {
                 known_values_++;
-                values_.at(index) = static_cast<uint8_t>(value);
-                potential_.at(index).reset();
+                values_[index] = static_cast<uint8_t>(value);
+                potential_[index].reset();
+                counts_[index] = 0;
                 EliminatePeers(x, y, value);
                 CheckPeers(x, y);
-            } else if (values_.at(index) != value) {
+            } else if (values_[index] != value) {
                 // Contradictory value to what we deduced already
                 SetFailed();
             }
@@ -49,14 +53,14 @@ public:
     }
 
     const uint8_t& GetValue(int x, int y) const {
-        return values_.at(9*y+x);
+        return values_[9*y+x];
     }
 
     const int GetBestNext() const {
         int best_index = -1;
         int best_count = 10;
         for (int i = 0; i < 81; ++i) {
-            int count = potential_.at(i).count();
+            const int count = counts_[i];
             if (count == 2) {
                 return i; // we can't beat this
             } else if (count > 0 && count < best_count)  {
@@ -67,8 +71,12 @@ public:
         return best_index;
     }
 
+    const int GetCount(const int index) const {
+        return counts_[index];
+    }
+
     const std::bitset<9>& GetPotentialValues(int index) const {
-        return potential_.at(index);
+        return potential_[index];
     }
 
     const bool IsFinished() const {
@@ -102,12 +110,13 @@ private:
     }
 
     void Eliminate(int x, int y, int value) {
-        if (HasFailed()) return;
         const int zvalue = value - 1;
-        std::bitset<9>& potential_values = potential_.at(y*9 + x);
+        const int index = 9*y + x;
+        auto& potential_values = potential_[index];
         if (potential_values.test(zvalue)) {
             potential_values.reset(zvalue);
-            if (potential_values.none()) {
+            counts_[index]--;
+            if (counts_[index] == 0) {
                 SetFailed();
             }
         }
@@ -131,9 +140,9 @@ private:
     }
 
     void CheckCell(int x, int y) {
-        std::bitset<9>& potential_values = potential_.at(y*9 + x);
-        if (potential_values.count() == 1) {
-            int found_value = GetBitIndex(potential_values) + 1;
+        const int index = 9*y + x;
+        if (counts_[index] == 1) {
+            int found_value = GetBitIndex(potential_[index]) + 1;
             SetValue(x, y, found_value);
         }
     }
@@ -141,13 +150,14 @@ private:
     int known_values_;
     std::array<uint8_t,81> values_;
     std::array<std::bitset<9>,81> potential_;
+    std::array<uint8_t,81> counts_;
 };
 
-bool isValid(char c) {
+bool IsValid(char c) {
     return c == '.' || (c >= '1' && c <= '9');
 }
 
-int getNextValue() {
+int GetNextValue() {
     char c;
     while (std::cin.get(c)) {
         if (c == '.') return 0;
@@ -160,7 +170,7 @@ Sudoku ParseStdin() {
     Sudoku s;
     for (int y = 0; y < 9; ++y) {
         for (int x = 0; x < 9; ++x) {
-            const int v = getNextValue();
+            const int v = GetNextValue();
             s.SetValue(x, y, v);
         }
     }
@@ -181,36 +191,56 @@ void PrintSudoku(const Sudoku& s) {
     }
 }
 
-void Solve(const Sudoku& sudoku) {
-    std::vector<Sudoku> remaining;
-    remaining.push_back(sudoku);
-    while (!remaining.empty()) {
-        Sudoku s{ remaining.back() };
-        remaining.pop_back();
+void BranchLast(std::vector<Sudoku>& remaining) {
+    const auto index = remaining.size() - 1;
+    const int best_pos = remaining[index].GetBestNext();
+    const int count = remaining[index].GetCount(best_pos);
+    const auto potential = remaining[index].GetPotentialValues(best_pos);
 
-        if (s.IsFinished()) {
-            PrintSudoku(s);
-            return;
-        } else if (!s.HasFailed()) {
-            int best_pos = s.GetBestNext();
-            const std::bitset<9>& potential = s.GetPotentialValues(best_pos);
-            for (int i = 0; i < 9; ++i) {
-                if (potential.test(i)) {
-                    Sudoku copy(s);
-                    copy.SetValue(best_pos, i+1);
-                    remaining.push_back(copy);
+    int num = 0;
+    for (int i = 0; i < 9; ++i) {
+        if (potential.test(i)) {
+            num++;
+            if (num == count) {
+                remaining[index].SetValue(best_pos, i+1);
+            } else {
+                remaining.emplace_back(remaining[index]);
+                remaining.back().SetValue(best_pos, i+1);
+                if (remaining.back().HasFailed()) {
+                    remaining.pop_back();
                 }
             }
         }
     }
 }
 
+Sudoku Solve(const Sudoku& sudoku) {
+    std::vector<Sudoku> remaining;
+    remaining.push_back(sudoku);
+
+    while (!remaining.empty()) {
+        const Sudoku& s{ remaining.back() };
+        if (s.IsFinished()) {
+            return s;
+        } else if (!s.HasFailed()) {
+            BranchLast(remaining);
+        } else {
+            remaining.pop_back();
+        }
+    }
+
+    throw std::runtime_error("No solution!");
+}
+
 int main() {
-    auto s{ ParseStdin() };
-    auto start{ std::chrono::high_resolution_clock::now() };
-    Solve(std::move(s));
-    auto end{ std::chrono::high_resolution_clock::now() };
+    const auto s{ ParseStdin() };
+
+    const auto start{ std::chrono::high_resolution_clock::now() };
+    const auto solution{ Solve(s) };
+    const auto end{ std::chrono::high_resolution_clock::now() };
     std::chrono::nanoseconds nanosecs{ end - start };
+
+    PrintSudoku(solution);
     std::cout << "milliseconds: " << nanosecs.count() / 1000000.0 << "\n";
     double persec = 1000000000.0 / nanosecs.count();
     std::cout << "per second: " << persec << "\n";
