@@ -38,14 +38,11 @@ public:
                 known_values_++;
                 values_.at(index) = static_cast<uint8_t>(value);
                 potential_.at(index).reset();
-                eliminate_peers(x, y, value);
-                check_peers(x, y);
-            } else if (values_.at(index) == value) {
-                //std::cout << "Already deduced " << x << ":" << y << " = " << value << "\n";
-            } else {
-                //std::cout << "Contradictory value. " << value << " != ";
-                //std::cout << static_cast<int>(values_.at(index)) << "\n";
-                known_values_ = -1;
+                EliminatePeers(x, y, value);
+                CheckPeers(x, y);
+            } else if (values_.at(index) != value) {
+                // Contradictory value to what we deduced already
+                SetFailed();
             }
         }
     }
@@ -64,8 +61,6 @@ public:
             } else if (count > 0 && count < best_count)  {
                 best_count = count;
                 best_index = i;
-            } else {
-                //std::cout << "count = " << count << "\n";
             }
         }
         return best_index;
@@ -83,11 +78,15 @@ public:
         return known_values_ == -1;
     }
 private:
-    void eliminate_peers(int x, int y, int value) {
+    void SetFailed() {
+        known_values_ = -1;
+    }
+
+    void EliminatePeers(int x, int y, int value) {
         // row and col
         for (int i = 0; i < 9; ++i) {
-            if (i != x) eliminate(i, y, value);
-            if (i != y) eliminate(x, i, value);
+            if (i != x) Eliminate(i, y, value);
+            if (i != y) Eliminate(x, i, value);
             if (HasFailed()) return;
         }
         // zone
@@ -95,47 +94,45 @@ private:
         const int y0 = y - (y % 3);
         for (int i = y0; i < y0+3; ++i) {
             for (int j = x0; j < x0+3; ++j) {
-                if (i != y && j != x) eliminate(j, i, value);
+                if (i != y && j != x) Eliminate(j, i, value);
                 if (HasFailed()) return;
             }
         }
     }
 
-    void eliminate(int x, int y, int value) {
+    void Eliminate(int x, int y, int value) {
         if (HasFailed()) return;
         const int zvalue = value - 1;
         std::bitset<9>& potential_values = potential_.at(y*9 + x);
         if (potential_values.test(zvalue)) {
             potential_values.reset(zvalue);
             if (potential_values.none()) {
-                known_values_ = -1; // this sudoku failed
-                //std::cout << "Reached impossible state\n";
+                SetFailed();
             }
         }
     }
 
-    void check_peers(int x, int y) {
+    void CheckPeers(int x, int y) {
         if (HasFailed()) return;
         // row and col
         for (int i = 0; i < 9; ++i) {
-            if (i != x) check_cell(i, y);
-            if (i != y) check_cell(x, i);
+            if (i != x) CheckCell(i, y);
+            if (i != y) CheckCell(x, i);
         }
         // zone
         const int x0 = x - (x % 3);
         const int y0 = y - (y % 3);
         for (int i = y0; i < y0+3; ++i) {
             for (int j = x0; j < x0+3; ++j) {
-                if (i != y && j != x) check_cell(j, i);
+                if (i != y && j != x) CheckCell(j, i);
             }
         }
     }
 
-    void check_cell(int x, int y) {
+    void CheckCell(int x, int y) {
         std::bitset<9>& potential_values = potential_.at(y*9 + x);
         if (potential_values.count() == 1) {
             int found_value = GetBitIndex(potential_values) + 1;
-            //std::cout << "Found value " << x << ":" << y << " = " << found_value << "\n";
             SetValue(x, y, found_value);
         }
     }
@@ -158,7 +155,7 @@ int getNextValue() {
     throw std::runtime_error("Reached end of input!");
 }
 
-Sudoku parse_stdin() {
+Sudoku ParseStdin() {
     Sudoku s;
     for (int y = 0; y < 9; ++y) {
         for (int x = 0; x < 9; ++x) {
@@ -169,7 +166,7 @@ Sudoku parse_stdin() {
     return s;
 }
 
-void print_sudoku(const Sudoku& s) {
+void PrintSudoku(const Sudoku& s) {
     for (int y = 0; y < 9; ++y) {
         for (int x = 0; x < 9; ++x) {
             const int v = s.GetValue(x, y);
@@ -183,24 +180,19 @@ void print_sudoku(const Sudoku& s) {
     }
 }
 
-void solve(const Sudoku& sudoku) {
+void Solve(const Sudoku& sudoku) {
     std::vector<Sudoku> remaining;
     remaining.push_back(sudoku);
     while (!remaining.empty()) {
         Sudoku s{ remaining.back() };
         remaining.pop_back();
 
-        //std::cout << "\nExamining:\n";
-        //print_sudoku(s);
-
         if (s.IsFinished()) {
-            //std::cout << "Success!\n";
-            print_sudoku(s);
+            PrintSudoku(s);
             return;
         } else if (!s.HasFailed()) {
             int best_pos = s.GetBestNext();
             const std::bitset<9>& potential = s.GetPotentialValues(best_pos);
-            //std::cout << "\nCreating " << potential.count() << " branches\n";
             for (int i = 0; i < 9; ++i) {
                 if (potential.test(i)) {
                     Sudoku copy(s);
@@ -208,13 +200,11 @@ void solve(const Sudoku& sudoku) {
                     remaining.push_back(copy);
                 }
             }
-        } else {
-            //std::cout << "Impossible\n";
         }
     }
 }
 
 int main() {
-    solve(parse_stdin());
+    Solve(ParseStdin());
     return 0;
 }
